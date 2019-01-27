@@ -78,6 +78,13 @@ test %>%
 test %>%
   ggplot(aes(medv, bag_pred)) +
   geom_point()
+
+# Plot medv vs lstat, rm and rad for train data
+ggplot(train, aes(lstat, medv)) +
+  geom_point()
+
+ggplot(train, aes(rad, medv, group = rad)) +
+  geom_boxplot()
 ```
 
 Fit bagging  models for a grid of different values for trees and min_n. The test rmse does not vary much for different numbers of trees in the ensemble, provided the number of trees is reasoably large - the chart suggests above 300 makes little difference.  The test rmse is slightly smaller for smaller values of min_n, the minimum number of data points in a node that are required for the node to be split further. In other words, having more complex trees gives slightly smaller rmse.
