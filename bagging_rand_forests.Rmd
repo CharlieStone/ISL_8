@@ -1,5 +1,5 @@
 ---
-title: "Bagging and random forests"
+title: "Bagging, random forests and boosted regression trees"
 author: "Charlie Stone"
 date: "27/01/2019"
 output: html_document
