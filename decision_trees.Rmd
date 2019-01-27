@@ -8,7 +8,7 @@ output: html_document
 ## 0. Setup
 
 Load packages.
-```{r pckgs}
+```{r pckgs, message=FALSE, warning=FALSE}
 library(ISLR)
 library(tidyverse)
 library(tidymodels)
