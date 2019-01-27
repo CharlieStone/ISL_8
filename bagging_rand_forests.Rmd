@@ -1,0 +1,120 @@
+---
+title: "Bagging and random forests"
+author: "Charlie Stone"
+date: "27/01/2019"
+output: html_document
+---
+
+## 0. Setup
+
+Load packages.
+
+```{r packages}
+library(MASS)
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(plotly)
+```
+
+### Bagging and Random forests
+
+Load Boston data.
+```{r boston}
+boston_df <- as_tibble(Boston)
+
+# Summary view of data
+boston_df[1:10, ]
+summary(boston_df)
+```
+
+Split data into a train and test set.
+```{r split}
+set.seed(12)
+split <- initial_split(boston_df, prop = 0.8)
+boston_train <- training(split)
+boston_test <- testing(split)
+
+# Specify recipe for pre-processing data and prep train and test datasets using this recipe.
+rec <- boston_train %>%
+  recipe( ~ .) 
+
+prepped <- rec %>%
+  prep(retain = TRUE)
+  
+train <- prepped %>% 
+  juice()
+
+test <- prepped %>% 
+  bake(new_data = boston_test)
+```
+
+Fit bagging model with default values for trees = 500 (the number of trees in the ensemble) and min_n (the minimum number of data points in a node for it to be split further).
+```{r bagging_default}
+# Fit tree model to training set
+rf_mod <- rand_forest(mode = "regression", mtry = 13) %>%
+  set_engine("randomForest") %>%
+  fit(medv ~ ., data = train)
+
+rf_mod
+
+# Variable importance
+rf_mod$fit$importance %>%
+  as_tibble(rownames = "variable") %>%
+  arrange(-IncNodePurity) %>%
+  ggplot(aes(fct_reorder(variable, IncNodePurity, .desc = TRUE), IncNodePurity)) +
+  geom_bar(stat = "identity")
+
+# Evaluate tree performance on test set
+test <- test %>%
+  bind_cols(predict(rf_mod, new_data = test)) %>%
+  rename(bag_pred = ".pred")
+
+# rmse
+test %>% 
+  rmse(truth = medv, estimate = bag_pred)
+
+# Scatter plot estimate vs actual
+test %>%
+  ggplot(aes(medv, bag_pred)) +
+  geom_point()
+```
+
+Fit bagging and random forest models for a grid of different values for trees and min_n. Also look at mtry values of 2, 4, 8 aand 13 (bagging is the case where mtry = 13, the same as the number of variables in the modle).  The test rmse does not vary much for different numbers of trees in the ensemble, provided the number of trees is reasoably large - the chart suggests above 300 makes little difference.  The test rmse is slightly smaller for smaller values of min_n, the minimum number of data points in a node that are required for the node to be split further. In other words, having more complex trees gives slightly smaller rmse.
+```{r bagging_vary}
+# Setup grid of values to fit models to training data for.
+bag_grid <- grid_regular(
+  trees %>% range_set(c(10,  3000)), 
+  min_n %>% range_set(c(5,  80)), 
+  levels = 10
+)
+
+# Helper function to fit model to train data and calculate rmse on test dataset.
+fit_rf <- function(rf_mod){
+  rf_mod <- rf_mod %>%
+  set_engine("randomForest") %>%
+  fit(medv ~ ., data = train)
+
+  test %>%
+  bind_cols(predict(rf_mod, new_data = test)) %>%
+  rmse(truth = medv, estimate = ".pred") %>%
+  rename(est = ".estimate") %>%
+  dplyr::select(est) %>%
+  unlist()
+}
+
+# Fit model for each combination of the grid values.
+bag_grid <- bag_grid %>%
+  mutate(train = list(train),
+         rf_mod = pmap(trees, min_n, ~rand_forest(mode = "regression", mtry = 13, trees = .x, min_n = .y)),
+         rmse = map_dbl(rf_mod, fit_rf))
+
+# Plot rmse for each value of trees and min_n
+bag_grid %>%
+  mutate(trees = as_factor(as.character(trees))) %>%
+  ggplot(aes(min_n, rmse, colour = trees)) +
+  geom_point() +
+  geom_line()
+```
+
+

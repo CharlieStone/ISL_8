@@ -1,0 +1,207 @@
+---
+title: "Decision trees for classification"
+author: "Charlie Stone"
+date: "27/01/2019"
+output: html_document
+---
+
+## 0. Setup
+
+Load packages.
+```{r pckgs}
+library(ISLR)
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(plotly)
+library(tree)
+library(vcd)
+```
+
+## Lab
+
+### Fitting classification trees
+
+Load carseats data and create binary response variable from sales.  This splits stores into those with sales above 8 and those below (the mean sales are 7.5).
+```{r carseats}
+cs_df <- as_tibble(Carseats)
+
+# Summary view of data
+cs_df[1:10, ]
+summary(cs_df)
+
+# Create binary response variable.  This must be a factor for the tree function to fit a classification tree.
+cs_df <- cs_df %>%
+  mutate(high = if_else(Sales <= 8, "no", "yes"),
+         high = factor(high, levels = unique(high)))
+```
+
+Fit a classification tree to the whole dataset using the 'tree' package, and then select a value for the cost-complexity parameter using cross validation.
+```{r fit_tree}
+cs_tree <- tree(high ~ . -Sales, cs_df)
+
+summary(cs_tree)
+
+plot(cs_tree)
+text(cs_tree, pretty = 0)
+
+cs_tree
+```
+
+Split the dataset into a training and testing set.  Build the tree on the training set and then evaluate its performance on the test set. 
+```{r train_test_split}
+# Split data into train and test set.
+set.seed(6)
+```
+
+
+```{r train_test_split}
+split <- initial_split(cs_df, prop = 0.5)
+cs_train <- training(split)
+cs_test <- testing(split)
+
+# Specify recipe for pre-processing data and prep train and test datasets using this recipe.
+rec <- cs_train %>%
+  recipe( ~ .) %>%
+  step_mutate(high = if_else(Sales <= 8, "no", "yes"), role = "outcome") %>%
+  step_string2factor(high) 
+
+prepped <- rec %>%
+  prep(retain = TRUE)
+  
+train <- prepped %>% 
+  juice()
+
+test <- prepped %>% 
+  bake(new_data = cs_test)
+```
+
+Fit using tree package, first fit full tree on train set and evaluate performance on test set.  Then find a value for cost-complexity parameter using cross validation, and prune tree at optimal (based on cross val) number of terminal nodes. The pruned tree actually has slighlty worse accuracy, but is much simpler.  The slightly worse accuracy could be due to the relatively small dataset used.
+
+```{r cost_comp_tree}
+# No pruning
+set.seed(10)
+cs_tree <- tree(high ~ . -Sales, train)
+
+summary(cs_tree)
+
+plot(cs_tree)
+text(cs_tree, pretty = 0)
+
+cs_tree_predict <- predict(cs_tree, test, type = "class")
+table(cs_tree_predict, test$high)
+(88 + 58) / 200
+
+# Pruning, using cross validation to select optimal cost-complexity parameter
+set.seed(12)
+cs_tree_cv <- cv.tree(cs_tree, FUN = prune.misclass)
+
+cs_tree_cv
+
+cs_tree_prune <- prune.misclass(cs_tree, best = 5)
+plot(cs_tree_prune)
+text(cs_tree_prune, pretty = 0)
+
+cs_tree_prune_predict <- predict(cs_tree_prune, test, type = "class")
+table(cs_tree_prune_predict, test$high)
+
+(85 + 55) / 200
+```
+
+Fit a model to training set and then assess performance against test set using tidymodels. I have used the rpart package (or 'engine' in tidymodels terminology) to fit the decision tree model, as the 'tree' package is not currently supported by tidymodels.  This provides marginally better accuracy than using the 'tree' package with no pruning.  Note that the rpart package uses a cost complexity parameter of 0.01 by default and so there has been some pruning.
+```{r test_tree}
+# Fit tree model to training set
+tree_mod <- decision_tree(mode = "classification") %>%
+  set_engine("rpart") %>%
+  fit(high ~ . - Sales, data = train)
+
+tree_mod
+tree_mod$fit$variable.importance
+
+# Evaluate tree performance on test set
+test <- test %>%
+  bind_cols(predict(tree_mod, new_data = test)) %>%
+  rename(rpart_pred = ".pred_class")
+
+# a. Tree model accuracy compared to null model. Accuracy is % of predicted classifications that are the same as the observed.
+null_model = test %>%
+  group_by(high) %>%
+  summarise(pct_obs = n() / nrow(test)) %>%
+  ungroup() %>%
+  filter(pct_obs == max(pct_obs)) %>%
+  select(pct_obs)
+
+accuracy(test, truth = "high", estimate = "rpart_pred") %>%
+  mutate(null_model = unlist(null_model)) %>%
+  rename(tree_model = ".estimate")
+
+# b. Confusion matrix
+cs_tree_conf_matrix <- test %>% 
+  yardstick::conf_mat(truth = "high", estimate = "rpart_pred") %>%
+  .$table
+
+# b.1 Conf matrix as table
+cs_tree_conf_matrix
+
+# b.2 As mosaic plot
+mosaic(cs_tree_conf_matrix)
+
+# b.3 Using ggplot
+cs_tree_conf_matrix %>%
+  as_tibble() %>%
+  ggplot(aes(Prediction, Truth, alpha = n)) + 
+  geom_tile(fill = "darkblue", show.legend = FALSE) +
+  geom_text(aes(label = n), color = "black", alpha = 1, size = 8) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(
+    title = "Confusion matrix"
+  )
+```
+
+Now use cross-validation to determine an optimal level of tree complexity, this is determined by the parameter Cp.  Use the 'train' function from the 'caret' package to do this.  Think that the dials package within tidymodels will eventually be able to do this, but at this stage of development, I do not think that this is available.  Results are actually the same as using the default parameter in rpart.
+```{r crossval_tree}
+# Find optimal value of cost-complexity parameter
+tree_mod_tune <-
+  train(
+    high ~ . - Sales,
+    data = train,
+    method = "rpart",
+    tuneLength = 20,
+    trControl = trainControl(method = "cv", number = 10)
+  )
+
+plot(tree_mod_tune)
+Cp_opt <- unlist(tree_mod_tune$bestTune)
+
+# Fit model with optimal value of Cp
+tree_mod_opt <- decision_tree(mode = "classification", cost_complexity = Cp_opt) %>%
+  set_engine("rpart") %>%
+  fit(high ~ . - Sales, data = train)
+
+# Evaluate tree performance on test set
+test <- test %>%
+  bind_cols(predict(tree_mod_opt, new_data = test)) %>%
+  rename(rpart_opt_pred = ".pred_class")
+
+# a. Tree model accuracy compared to null model. Accuracy is % of predicted classifications that are the same as the observed.
+accuracy(test, truth = "high", estimate = "rpart_opt_pred")
+
+# b. Confusion matrix
+cs_tree_conf_matrix <- test %>% 
+  yardstick::conf_mat(truth = "high", estimate = "rpart_opt_pred") %>%
+  .$table
+
+cs_tree_conf_matrix %>%
+  as_tibble() %>%
+  ggplot(aes(Prediction, Truth, alpha = n)) + 
+  geom_tile(fill = "darkblue", show.legend = FALSE) +
+  geom_text(aes(label = n), color = "black", alpha = 1, size = 8) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(
+    title = "Confusion matrix"
+  )
+
+```
+
