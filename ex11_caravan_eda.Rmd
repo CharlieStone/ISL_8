@@ -1,5 +1,5 @@
 ---
-title: "Exercise 11 - Caravans"
+title: "Exercise 11 - Caravans - EDA"
 output: html_notebook
 ---
 
@@ -13,6 +13,7 @@ library(tidymodels)
 library(caret)
 library(ISLR)
 library(GGally)
+library(plotly)
 ```
 
 ## Caravan data
@@ -43,16 +44,6 @@ caravan_df %>%
 caravan_df %>%
   map(~sort(unique(.)))
 
-# Set all variables values subset of 0, 1, 2 to be factors
-max_num <- function(x){
-  ifelse(is.numeric(x), max(x), 1000)
-}
-
-caravan_df <- caravan_df %>%
-  mutate_if(~(is.numeric(.) & (max_num(.) <= 2)), ~factor(., levels = sort(unique(.))))
-
-caravan_df %>%
-  map(unique)
 ```
 
 # EDA
@@ -256,8 +247,95 @@ caravan_df %>%
   ggcorr(nbreaks=8, palette='RdGy', label=TRUE, label_size=5, label_color='white')
 ```
 
-Investigate pairs AWERKT & PWERKT, and AVRAAUT & PVRAAUT further as have high positive high correlations.
-```{r eda}
+Investigate pairs AWERKT & PWERKT, and AVRAAUT & PVRAAUT further as have high positive high correlations.  Chart does suggest highly correlated.
 
+Use PVRAAUT instead of AVRAAUT as more distinction on Purchase.  Use PWERKT instead of AWERKT for same reason.
+```{r eda_corr_2_invest}
+caravan_df %>%
+  select(one_of(c("AWERKT", "PWERKT", "AVRAAUT", "PVRAAUT")), "Purchase") %>%
+  ggpairs(columns = 1:4, lower = list(continuous = wrap(
+    my_bin, binwidth = c(0.5, 0.5), high = "red"
+  )))
+```
+
+Left with the following variables to use.
+```{r var_to_use}
+var_mod <-   c(
+    "MRELGE",
+    "MOPLMIDD",
+    "MHHUUR",
+    "MSKA",
+    "MOSTYPE",
+    "MHKOOP",
+    "MZFONDS",
+    "PWAPART",
+    "ABESAUT",
+    "PVRAAUT",
+    "PWABEDR",
+    "PWERKT",
+    "PPERSONG",
+    "PGEZONG",
+    "PZEILPL"
+  )
+
+write.csv(var_mod, "var_mod.csv")
+```
+
+Finally, carry out PCA on entire dataset and see which are the principal components.  Also see if Purchase = "Yes" and "No" are well distinguished by first two principal components. Scale variables before carrying out pca, because MOSTYPE varies between 0 and 40, but don't want this variable to dominate the analysis.  There does not appear to be a clear separation between Purchase = "Yes" and purchase = "No".
+
+```{r pca_entire}
+pr_out <- caravan_df %>%
+  select(-Purchase) %>%
+  prcomp(scale = TRUE)
+
+pr_vectors <- pr_out$x %>%
+  as_tibble() 
+
+pr_vectors$Purchase <- caravan_df$Purchase
+
+ggplot(pr_vectors, aes(x = PC1, y = PC2)) +
+  geom_bin2d() +
+      scale_fill_gradient(high = "red") +
+  facet_wrap(~Purchase)
+
+```
+
+Repeat with selected variables.  Again, there is not a clear separation.
+```{r pca_selected}
+pr_out <- caravan_df %>%
+  select(-Purchase) %>%
+  select(one_of(var_mod)) %>%
+  prcomp(scale = TRUE)
+
+pr_vectors <- pr_out$x %>%
+  as_tibble() 
+
+pr_vectors$Purchase <- caravan_df$Purchase
+
+ggplot(pr_vectors, aes(x = PC1, y = PC2)) +
+  geom_bin2d() +
+      scale_fill_gradient(high = "red") +
+  facet_wrap(~Purchase)
+
+```
+
+Plot scree plot of principal components, see how much of the variance the two principal components explain, if they do not explain much then might still be able to differentiate between purchase = yes and no using the variables.
+
+There is a clear drop off after the first principal component, but fairly level after that, and the first principal component only accounts for around 20% of the variation.
+
+```{r pca_scree}
+pca_pve <- summary(pr_out)$importance
+
+pca_pve <- pca_pve %>%
+  t() %>%
+  as_tibble() 
+
+names(pca_pve) <- c("st_dev", "pve", "cumulative_pve")
+
+pca_pve$principal_component <- 1:14
+
+ggplot(pca_pve, aes(principal_component, pve)) +
+  geom_point() +
+  geom_line()
 ```
 
