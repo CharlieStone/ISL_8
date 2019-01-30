@@ -1,0 +1,169 @@
+---
+title: "Exercise 11 - Caravans"
+output: html_notebook
+---
+
+## 0. Setup
+
+Load packages.
+
+```{r packages, warning = FALSE, message= FALSE}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(ISLR)
+```
+
+## Caravan data
+
+Save Caravan data as a tibble.
+
+```{r caravan_df}
+caravan_df <- as_tibble(Caravan)
+
+glimpse(caravan_df)
+
+# Minimum values
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(min) 
+
+# Maximum vaues
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(max) 
+
+# Number of NA values
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(~sum(is.na(.))) 
+```
+
+# EDA
+Plot charts of variables vs response variable.
+```{r eda_boxplots}
+# First 10 variables
+caravan_df %>%
+  select(1:10, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 11 to 20 variables (10)
+caravan_df %>%
+  select(11:20, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 20
+caravan_df %>%
+  select(21:30, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 30
+caravan_df %>%
+  select(31:40, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 40
+caravan_df %>%
+  select(41:50, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 50
+caravan_df %>%
+  select(51:60, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 60
+caravan_df %>%
+  select(61:70, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 70
+caravan_df %>%
+  select(71:80, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 80
+caravan_df %>%
+  select(81:85, "Purchase") %>%
+  gather(1:5, key = "variable", value = "value") %>%
+  ggplot(aes(variable, value, colour = Purchase)) +
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The boxplots are only useful up to variable 40.  Of these 40, the variables which look most promising for classifying cases as Purchase = Yes or No are: MRELGE, MOPLMIDD, MHHUUR, MSKA, MOSHOOFD, MOSTYPE, MHKOOP, MZFONDS, PWAPART.  For variables 50 onwards most of the variable values are zero and so the boxplot is mostly a line at 0 with dots for outliers that are not zero. Do bar charts for these variables instead.
+
+```{r eda_bars}
+# 41 to 50 (40)
+caravan_df %>%
+  select(41:50, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(value, fill = Purchase)) +
+  geom_histogram(aes(y = stat(width*density)), position = "dodge") +
+  facet_wrap(~ variable) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 50
+caravan_df %>%
+  select(51:60, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(value, fill = Purchase)) +
+  geom_histogram(aes(y = stat(width*density)), position = "dodge") +
+  facet_wrap(~ variable) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 60
+caravan_df %>%
+  select(61:70, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(value, fill = Purchase)) +
+  geom_histogram(aes(y = stat(width*density)), position = "dodge") +
+  facet_wrap(~ variable) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 70
+caravan_df %>%
+  select(71:80, "Purchase") %>%
+  gather(1:10, key = "variable", value = "value") %>%
+  ggplot(aes(value, fill = Purchase)) +
+  geom_histogram(aes(y = stat(width*density)), position = "dodge") +
+  facet_wrap(~ variable) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# 81 to 85
+caravan_df %>%
+  select(81:85, "Purchase") %>%
+  gather(1:5, key = "variable", value = "value") %>%
+  ggplot(aes(value, fill = Purchase)) +
+  geom_histogram(aes(y = stat(width*density)), position = "dodge") +
+  facet_wrap(~ variable) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+
+
