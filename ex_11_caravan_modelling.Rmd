@@ -1,0 +1,142 @@
+---
+title: "Caravans - Modelling"
+output: html_notebook
+---
+
+## 0. Setup
+
+Load packages.
+
+```{r packages, warning = FALSE, message= FALSE}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(ISLR)
+library(GGally)
+library(plotly)
+```
+
+## Caravan data
+
+Save Caravan data as a tibble.
+
+```{r caravan_df}
+caravan_df <- as_tibble(Caravan)
+
+glimpse(caravan_df)
+
+# Number of NA values
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(~sum(is.na(.))) 
+
+# Minimum values
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(min) 
+
+# Maximum vaues
+caravan_df %>%
+  select(-Purchase) %>%
+  summarise_all(max) 
+
+# Unique values for each variable
+caravan_df %>%
+  map(~sort(unique(.)))
+
+```
+
+Read in subset of variables for modelling from EDA analysis.
+```{r var_mod}
+var_mod <- read_csv("var_mod.csv")
+
+var_mod <- var_mod$x
+```
+
+## Split into training and test datasets
+
+Split 70% of the data into a training set and the other 30% as a test set.
+
+```{r train_test}
+set.seed(12)
+split <- caravan_df %>%
+  # select(one_of(var_mod), Purchase) %>%
+  initial_split(prop = 0.7)
+
+caravan_train <- training(split)
+caravan_test <- testing(split)
+
+# Specify recipe for pre-processing data and prep train and test datasets using this recipe.
+rec <-caravan_train %>%
+  recipe( ~ .) 
+
+prepped <- rec %>%
+  prep(retain = TRUE)
+  
+train <- prepped %>% 
+  juice()
+
+test <- prepped %>% 
+  bake(new_data = caravan_test)
+```
+
+## Purchase classification model using boosting
+
+Start by using the entire dataset, and see if the variables which appear to be the most important are consistent with those identified in the EDA.
+
+```{r entire_boost}
+# Specify the process to select the hyperparameters
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 10, repeats = 5, classProbs = TRUE)
+
+# Fit boosting model using 'train'
+boost_mod <-
+  train(
+    Purchase ~ . ,
+    data = train,
+    method = "gbm",
+    trControl = fitControl,
+    verbose = FALSE
+  )
+
+boost_mod
+
+# Give prediction probabilities on test set
+test <- test %>%
+  bind_cols(predict(boost_mod, newdata = test, type = "prob")) %>%
+  mutate(pred_purchase = if_else(Yes >= 0.2, "Yes", "No"),
+         pred_purchase = factor(pred_purchase))
+```
+
+
+```{r entire_boost_performance}
+# a. Tree model accuracy compared to null model. Accuracy is % of predicted classifications that are the same as the observed.
+accuracy(test, truth = "Purchase", estimate = "pred_purchase")
+
+# b. Confusion matrix
+cs_tree_conf_matrix <- test %>% 
+  yardstick::conf_mat(truth = "Purchase", estimate = "pred_purchase") %>%
+  .$table
+
+cs_tree_conf_matrix %>%
+  as_tibble() %>%
+  ggplot(aes(Prediction, Truth, alpha = n)) + 
+  geom_tile(fill = "darkblue", show.legend = FALSE) +
+  geom_text(aes(label = n), color = "black", alpha = 1, size = 8) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(
+    title = "Confusion matrix"
+  )
+```
+
+
+
+
+
+
+
+
+
+
+

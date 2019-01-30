@@ -1,6 +1,8 @@
 ---
-title: "Exercise 11 - Caravans - EDA"
-output: html_notebook
+title: "Caravans - Exploratory data analysis"
+output:
+  html_document:
+    df_print: paged
 ---
 
 ## 0. Setup
