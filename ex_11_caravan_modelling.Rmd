@@ -7,7 +7,7 @@ output: html_notebook
 
 Load packages.
 
-```{r packages, warning = FALSE, message= FALSE}
+```{r packages}
 library(tidyverse)
 library(tidymodels)
 library(caret)
@@ -87,7 +87,7 @@ Start by using the entire dataset, and see if the variables which appear to be t
 ```{r entire_boost}
 # Specify the process to select the hyperparameters
 fitControl <- trainControl(method = "repeatedcv",
-                           number = 10, repeats = 5, classProbs = TRUE)
+                           number = 10, repeats = 5, classProbs = TRUE, sampling = "up")
 
 # Fit boosting model using 'train'
 boost_mod <-
@@ -103,19 +103,17 @@ boost_mod
 
 # Give prediction probabilities on test set
 test <- test %>%
-  bind_cols(predict(boost_mod, newdata = test, type = "prob")) %>%
-  mutate(pred_purchase = if_else(Yes >= 0.2, "Yes", "No"),
-         pred_purchase = factor(pred_purchase))
+  mutate(pred_purchase_2 = predict(boost_mod, newdata = test))
 ```
 
 
 ```{r entire_boost_performance}
 # a. Tree model accuracy compared to null model. Accuracy is % of predicted classifications that are the same as the observed.
-accuracy(test, truth = "Purchase", estimate = "pred_purchase")
+accuracy(test, truth = "Purchase", estimate = "pred_purchase_2")
 
 # b. Confusion matrix
 cs_tree_conf_matrix <- test %>% 
-  yardstick::conf_mat(truth = "Purchase", estimate = "pred_purchase") %>%
+  yardstick::conf_mat(truth = "Purchase", estimate = "pred_purchase_2") %>%
   .$table
 
 cs_tree_conf_matrix %>%
@@ -130,13 +128,47 @@ cs_tree_conf_matrix %>%
   )
 ```
 
+Logistic regression
+
+```{r entire_glm}
+# Specify the process to select the hyperparameters
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 10, repeats = 5, classProbs = TRUE, sampling = "up")
+
+# Fit boosting model using 'train'
+glm_mod <-
+  train(
+    Purchase ~ . ,
+    data = train,
+    method = "glmnet",
+    trControl = fitControl,
+    verbose = FALSE
+  )
+
+glm_mod
+
+# Give prediction probabilities on test set
+test <- test %>%
+  mutate(pred_purchase_3 = predict(glm_mod, newdata = test))
+```
 
 
+```{r entire_glm_performance}
+# a. Tree model accuracy compared to null model. Accuracy is % of predicted classifications that are the same as the observed.
+accuracy(test, truth = "Purchase", estimate = "pred_purchase_3")
 
+# b. Confusion matrix
+cs_tree_conf_matrix <- test %>% 
+  yardstick::conf_mat(truth = "Purchase", estimate = "pred_purchase_3") %>%
+  .$table
 
-
-
-
-
-
-
+cs_tree_conf_matrix %>%
+  as_tibble() %>%
+  ggplot(aes(Prediction, Truth, alpha = n)) + 
+  geom_tile(fill = "darkblue", show.legend = FALSE) +
+  geom_text(aes(label = n), color = "black", alpha = 1, size = 8) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(
+    title = "Confusion matrix"
+  )
